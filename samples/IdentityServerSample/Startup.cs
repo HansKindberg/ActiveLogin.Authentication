@@ -2,9 +2,12 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using ActiveLogin.Authentication.BankId.AspNetCore;
 using ActiveLogin.Authentication.BankId.AspNetCore.Azure;
 using ActiveLogin.Authentication.GrandId.AspNetCore;
+using IdentityModel;
 using Microsoft.ApplicationInsights.AspNetCore.Logging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.CookiePolicy;
@@ -111,9 +114,11 @@ namespace IdentityServerSample
                     }
                     else if (Configuration.GetValue("ActiveLogin:BankId:UseTestEnvironment", false))
                     {
-                        builder.UseTestEnvironment()
-                               .UseClientCertificateFromAzureKeyVault(Configuration.GetSection("ActiveLogin:BankId:ClientCertificate"))
-                               .UseRootCaCertificate(Path.Combine(_environment.ContentRootPath, Configuration.GetValue<string>("ActiveLogin:BankId:CaCertificate:FilePath")));
+	                    builder.UseTestEnvironment()
+		                    .UseClientCertificate(() => { return this.GetCertificate("421adf1d28149831", StoreLocation.LocalMachine, StoreName.My); })
+		                    .UseRootCaCertificate(() => { return this.GetCertificate("22161ac6ee248600", StoreLocation.LocalMachine, StoreName.Root); });
+	                    //.UseClientCertificateFromAzureKeyVault(Configuration.GetSection("ActiveLogin:BankId:ClientCertificate"))
+	                    //.UseRootCaCertificate(Path.Combine(_environment.ContentRootPath, Configuration.GetValue<string>("ActiveLogin:BankId:CaCertificate:FilePath")));
                     }
                     else
                     {
@@ -153,7 +158,30 @@ namespace IdentityServerSample
                 });
         }
 
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory)
+        protected internal virtual X509Certificate2 GetCertificate(string name, StoreLocation storeLocation, StoreName storeName)
+        {
+	        var store = new X509CertificatesName(storeLocation, storeName);
+
+	        var certificate = store.SubjectDistinguishedName.Find(name, false).FirstOrDefault();
+	        if (certificate != null)
+		        return certificate;
+
+	        certificate = store.Thumbprint.Find(name, false).FirstOrDefault();
+	        if (certificate != null)
+		        return certificate;
+
+	        certificate = store.SerialNumber.Find(name, false).FirstOrDefault();
+	        if (certificate != null)
+		        return certificate;
+
+	        certificate = store.IssuerName.Find(name, false).FirstOrDefault();
+	        if (certificate != null)
+		        return certificate;
+
+	        throw new InvalidOperationException(string.Format(CultureInfo.InvariantCulture, "Could not get certificate with name \"{0}\" at store-location \"{1}\" and store-name \"{2}\".", name, storeLocation, storeName));
+        }
+
+		public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory)
         {
             loggerFactory.AddApplicationInsights(app.ApplicationServices, LogLevel.Information);
 
